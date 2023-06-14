@@ -780,4 +780,3 @@ TRACE_EVENT(rcu_barrier,
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
-

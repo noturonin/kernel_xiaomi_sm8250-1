@@ -3369,7 +3369,6 @@ static void __lockdep_init_map_waits(struct lockdep_map *lock, const char *name,
 		raw_local_irq_restore(flags);
 	}
 }
-
 void lockdep_init_map_waits(struct lockdep_map *lock, const char *name,
 		      struct lock_class_key *key, int subclass)
 {

@@ -94,12 +94,6 @@ static inline int rcu_preempt_depth(void)
 
 #endif /* #else #ifdef CONFIG_PREEMPT_RCU */
 
-#ifdef CONFIG_RCU_LAZY
-void call_rcu_flush(struct rcu_head *head, rcu_callback_t func);
-#else
-static inline void call_rcu_flush(struct rcu_head *head, rcu_callback_t func) {  call_rcu(head, func); }
-#endif
-
 /* Internal to kernel */
 void rcu_init(void);
 extern int rcu_scheduler_active __read_mostly;
@@ -209,7 +203,6 @@ void synchronize_rcu_tasks_rude(void);
 
 #define rcu_note_voluntary_context_switch(t) rcu_tasks_qs(t, false)
 void exit_tasks_rcu_start(void);
-void exit_tasks_rcu_stop(void);
 void exit_tasks_rcu_finish(void);
 #else /* #ifdef CONFIG_TASKS_RCU_GENERIC */
 #define rcu_tasks_qs(t, preempt) do { } while (0)
@@ -217,7 +210,6 @@ void exit_tasks_rcu_finish(void);
 #define call_rcu_tasks call_rcu_sched
 #define synchronize_rcu_tasks synchronize_rcu
 static inline void exit_tasks_rcu_start(void) { }
-static inline void exit_tasks_rcu_stop(void) { }
 static inline void exit_tasks_rcu_finish(void) { }
 #endif /* #else #ifdef CONFIG_TASKS_RCU_GENERIC */
 
@@ -373,16 +365,16 @@ static inline void rcu_preempt_sleep_check(void) { }
  */
 
 #ifdef __CHECKER__
-#define rcu_dereference_sparse(p, space) \
+#define rcu_check_sparse(p, space) \
 	((void)(((typeof(*p) space *)p) == p))
 #else /* #ifdef __CHECKER__ */
-#define rcu_dereference_sparse(p, space)
+#define rcu_check_sparse(p, space)
 #endif /* #else #ifdef __CHECKER__ */
 
 #define __rcu_access_pointer(p, space) \
 ({ \
 	typeof(*p) *_________p1 = (typeof(*p) *__force)READ_ONCE(p); \
-	rcu_dereference_sparse(p, space); \
+	rcu_check_sparse(p, space); \
 	((typeof(*p) __force __kernel *)(_________p1)); \
 })
 #define __rcu_dereference_check(p, c, space) \
@@ -390,13 +382,13 @@ static inline void rcu_preempt_sleep_check(void) { }
 	/* Dependency order vs. p above. */ \
 	typeof(*p) *________p1 = (typeof(*p) *__force)READ_ONCE(p); \
 	RCU_LOCKDEP_WARN(!(c), "suspicious rcu_dereference_check() usage"); \
-	rcu_dereference_sparse(p, space); \
+	rcu_check_sparse(p, space); \
 	((typeof(*p) __force __kernel *)(________p1)); \
 })
 #define __rcu_dereference_protected(p, c, space) \
 ({ \
 	RCU_LOCKDEP_WARN(!(c), "suspicious rcu_dereference_protected() usage"); \
-	rcu_dereference_sparse(p, space); \
+	rcu_check_sparse(p, space); \
 	((typeof(*p) __force __kernel *)(p)); \
 })
 #define rcu_dereference_raw(p) \
@@ -446,6 +438,7 @@ static inline void rcu_preempt_sleep_check(void) { }
 #define rcu_assign_pointer(p, v)					      \
 ({									      \
 	uintptr_t _r_a_p__v = (uintptr_t)(v);				      \
+	rcu_check_sparse(p, __rcu);					      \
 									      \
 	if (__builtin_constant_p(v) && (_r_a_p__v) == (uintptr_t)NULL)	      \
 		WRITE_ONCE((p), (typeof(p))(_r_a_p__v));		      \
@@ -851,7 +844,7 @@ static inline notrace void rcu_read_unlock_sched_notrace(void)
  */
 #define RCU_INIT_POINTER(p, v) \
 	do { \
-		rcu_dereference_sparse(p, __rcu); \
+		rcu_check_sparse(p, __rcu); \
 		WRITE_ONCE(p, RCU_INITIALIZER(v)); \
 	} while (0)
 
@@ -929,7 +922,7 @@ do {									\
 
 /* Has the specified rcu_head structure been handed to call_rcu()? */
 
-/*
+/**
  * rcu_head_init - Initialize rcu_head for rcu_head_after_call_rcu()
  * @rhp: The rcu_head structure to initialize.
  *
@@ -944,10 +937,10 @@ static inline void rcu_head_init(struct rcu_head *rhp)
 	rhp->func = (rcu_callback_t)~0L;
 }
 
-/*
+/**
  * rcu_head_after_call_rcu - Has this rcu_head been passed to call_rcu()?
  * @rhp: The rcu_head structure to test.
- * @func: The function passed to call_rcu() along with @rhp.
+ * @f: The function passed to call_rcu() along with @rhp.
  *
  * Returns @true if the @rhp has been passed to call_rcu() with @func,
  * and @false otherwise.  Emits a warning in any other case, including
